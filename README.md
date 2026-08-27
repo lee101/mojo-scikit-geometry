@@ -61,13 +61,17 @@ algebraic predicates.
 
 | kernel | Mojo | reference | ratio |
 | --- | ---: | ---: | ---: |
-| orient2d, 500k | 7.24 ms | 11.04 ms | 1.53x |
-| incircle, 500k | 13.34 ms | 112.47 ms | 8.43x |
-| point-in-polygon, 500k x 128 | 435.76 ms | n/a | n/a |
+| orient2d, 500k | 3.28 ms | 9.64 ms | 2.94x |
+| incircle, 500k | 11.24 ms | 148.26 ms | 13.19x |
+| point-in-polygon, 500k x 128 | 16.60 ms | n/a | n/a |
 
 The point-in-polygon row has no NumPy baseline because NumPy has no equivalent
 single-call polygon classifier. It remains included as a reproducible throughput
 measurement rather than a fabricated comparison.
+
+No GPU path is provided. These kernels perform well under 2 floating-point
+operations per byte moved, so host/device transfer and launch costs cannot be
+amortized; CPU SIMD and thresholded parallel execution are the appropriate paths.
 
 ## How it works
 

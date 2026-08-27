@@ -119,7 +119,7 @@ def orientations(triples) -> np.ndarray:
     raw = f64(triples)
     if raw.ndim != 3 or raw.shape[1:] != (3, 2):
         raise ValueError("expected points with shape (n, 3, 2)")
-    packed = f64(raw.reshape(-1, 6))
+    packed = raw.reshape(-1, 6)
     result = np.empty(len(packed), dtype=np.int64)
     lib().msg_orient2d_batch(addr(packed), len(packed), addr(result))
     for i in np.flatnonzero(result == 0):
@@ -147,7 +147,7 @@ def incircles(quads) -> np.ndarray:
     raw = f64(quads)
     if raw.ndim != 3 or raw.shape[1:] != (4, 2):
         raise ValueError("expected points with shape (n, 4, 2)")
-    packed = f64(raw.reshape(-1, 8))
+    packed = raw.reshape(-1, 8)
     result = np.empty(len(packed), dtype=np.int64)
     lib().msg_incircle_batch(addr(packed), len(packed), addr(result))
     for i in np.flatnonzero(result == 0):
@@ -219,7 +219,7 @@ def segment_pair_kinds(pairs) -> np.ndarray:
     raw = f64(pairs)
     if raw.ndim != 3 or raw.shape[1:] != (4, 2):
         raise ValueError("expected pairs with shape (n, 4, 2)")
-    packed = f64(raw.reshape(-1, 8))
+    packed = raw.reshape(-1, 8)
     result = np.empty(len(packed), dtype=np.int64)
     lib().msg_segment_pairs(addr(packed), len(packed), addr(result))
     # A 2 also means an inconclusive filtered orientation. Resolve it exactly.
@@ -343,21 +343,20 @@ def points_in_polygon(points, polygon: Polygon | Sequence) -> np.ndarray:
     raw = f64(points)
     if raw.ndim != 2 or raw.shape[1] != 2:
         raise ValueError("expected points with shape (n, 2)")
-    vertices = f64([(p.x, p.y) for p in poly.vertices])
+    vertices = f64([[p.x for p in poly.vertices], [p.y for p in poly.vertices]])
     result = np.empty(len(raw), dtype=np.int64)
-    if len(vertices) < 3:
+    vertex_count = vertices.shape[1]
+    if vertex_count < 3:
         result.fill(int(ON_UNBOUNDED_SIDE))
         return result
-    lib().msg_points_in_polygon(addr(raw), len(raw), addr(vertices), len(vertices), addr(result))
+    lib().msg_points_in_polygon(addr(raw), len(raw), addr(vertices), vertex_count, addr(result))
     # The native kernel uses 2 for any edge whose floating-point filter was
     # inconclusive (including a possible boundary edge).  Reclassify those
     # points exactly; this keeps a fast path for ordinary points without
     # treating an uncertified orientation as a geometric zero.
-    uncertain = result == 2
     outside = result == 0
-    for i, point in enumerate(raw):
-        if uncertain[i]:
-            result[i] = int(poly.bounded_side(Point2(*point)))
+    for i in np.flatnonzero(result == 2):
+        result[i] = int(poly.bounded_side(Point2(*raw[i])))
     result[outside] = int(ON_UNBOUNDED_SIDE)
     return result
 

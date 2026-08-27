@@ -38,6 +38,22 @@ def test_orientation_batch_matches_independent_exact_reference():
     assert np.array_equal(sg.orientations(triples), expected)
 
 
+@pytest.mark.parametrize("size", [3, 4, 5, 9])
+def test_orientation_batch_sizes(size):
+    rng = np.random.default_rng(size)
+    triples = rng.normal(size=(size, 3, 2))
+    expected = np.array([ref_orientation(*row) for row in triples])
+    assert np.array_equal(sg.orientations(triples), expected)
+
+
+def test_orientation_parallel_threshold():
+    rng = np.random.default_rng(81)
+    triples = rng.normal(size=(100_003, 3, 2))
+    a, b, c = triples[:, 0], triples[:, 1], triples[:, 2]
+    expected = np.sign((a[:, 0] - c[:, 0]) * (b[:, 1] - c[:, 1]) - (a[:, 1] - c[:, 1]) * (b[:, 0] - c[:, 0]))
+    assert np.array_equal(sg.orientations(triples), expected)
+
+
 def test_incircle_batch_matches_independent_exact_reference():
     rng = np.random.default_rng(11)
     quads = rng.normal(size=(1000, 4, 2))
@@ -81,9 +97,16 @@ def test_points_in_polygon_handles_small_and_large_batches():
     polygon = sg.Polygon([(0, 0), (3, 0), (3, 2), (0, 2)])
     small = np.array([[1, 1], [0, 1], [4, 1], [3, 2]])
     assert np.array_equal(sg.points_in_polygon(small, polygon), [1, 0, -1, 0])
-    points = np.tile(small, (257, 1))
-    expected = np.tile([1, 0, -1, 0], 257)
+    points = np.tile([[1, 1], [4, 1]], (125_001, 1))
+    expected = np.tile([1, -1], 125_001)
     assert np.array_equal(sg.points_in_polygon(points, polygon), expected)
+
+
+def test_points_in_polygon_simd_tail():
+    angles = np.linspace(0, 2 * np.pi, 10, endpoint=False)
+    polygon = sg.Polygon(np.c_[np.cos(angles), np.sin(angles)])
+    points = np.array([[0, 0], [2, 0], [0.25, -0.25]])
+    assert np.array_equal(sg.points_in_polygon(points, polygon), [1, -1, 1])
 
 
 def test_convex_hull_and_triangulation_preserve_area():
