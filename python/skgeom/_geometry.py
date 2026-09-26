@@ -11,6 +11,7 @@ from typing import Iterable, Sequence
 import numpy as np
 
 from ._lib import addr, f64, lib
+from ._lib import points_in_polygon as native_points_in_polygon
 
 
 class Sign(IntEnum):
@@ -349,7 +350,7 @@ def points_in_polygon(points, polygon: Polygon | Sequence) -> np.ndarray:
     if vertex_count < 3:
         result.fill(int(ON_UNBOUNDED_SIDE))
         return result
-    lib().msg_points_in_polygon(addr(raw), len(raw), addr(vertices), vertex_count, addr(result))
+    native_points_in_polygon(raw, len(raw), vertices, vertex_count, result)
     # The native kernel uses 2 for any edge whose floating-point filter was
     # inconclusive (including a possible boundary edge).  Reclassify those
     # points exactly; this keeps a fast path for ordinary points without

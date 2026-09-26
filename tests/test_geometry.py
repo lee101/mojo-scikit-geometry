@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import skgeom as sg
+import skgeom._lib as sg_lib
 
 
 def ref_orientation(a, b, c):
@@ -107,6 +108,24 @@ def test_points_in_polygon_simd_tail():
     polygon = sg.Polygon(np.c_[np.cos(angles), np.sin(angles)])
     points = np.array([[0, 0], [2, 0], [0.25, -0.25]])
     assert np.array_equal(sg.points_in_polygon(points, polygon), [1, -1, 1])
+
+
+def test_points_in_polygon_threaded_fan_out_is_bit_identical_to_serial(monkeypatch):
+    """Above the pair threshold the shim blocks the query range over a pool."""
+    rng = np.random.default_rng(31)
+    angles = np.sort(rng.uniform(0, 2 * np.pi, 512))
+    polygon = sg.Polygon(np.c_[np.cos(angles), np.sin(angles)])
+    points = np.ascontiguousarray(rng.uniform(-1.5, 1.5, size=(40_000, 2)))
+    monkeypatch.setattr(sg_lib, "PARALLEL_PAIR_THRESHOLD", 1)
+    threaded = sg.points_in_polygon(points, polygon)
+    monkeypatch.setattr(sg_lib, "PARALLEL_PAIR_THRESHOLD", 1 << 62)
+    serial = sg.points_in_polygon(points, polygon)
+    assert np.array_equal(threaded, serial)
+    reference = np.array(
+        [polygon.bounded_side(sg.Point2(*p)) for p in points[::97]],
+        dtype=np.int64,
+    )
+    assert np.array_equal(threaded[::97], reference)
 
 
 def test_convex_hull_and_triangulation_preserve_area():

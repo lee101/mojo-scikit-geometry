@@ -4,41 +4,10 @@ The predicates report zero when the floating-point filter cannot certify a
 sign.  Python then evaluates that exceptional case exactly with dyadic rationals.
 """
 
-from std.runtime import initialize_runtime
-from std.runtime.asyncrt import TaskGroup
 from std.sys.info import simd_width_of as simdwidthof
 
 comptime Ptr = UnsafePointer[Float64, AnyOrigin[mut=True]]
 comptime IPtr = UnsafePointer[Int, AnyOrigin[mut=True]]
-comptime ORIENT_PARALLEL_THRESHOLD = 100_000
-comptime ORIENT_CHUNK = 4096
-comptime ORIENT_WORKERS = 16
-comptime POLYGON_PARALLEL_THRESHOLD = 1_000_000
-comptime POLYGON_CHUNK = 1024
-comptime POLYGON_WORKERS = 32
-
-
-@always_inline
-def parallelize[FuncType: def(Int) -> None](
-    func: FuncType, num_work_items: Int, num_workers: Int
-):
-    var workers = min(num_work_items, num_workers)
-    if workers <= 1:
-        for i in range(num_work_items):
-            func(i)
-        return
-    var chunk_size, extra_items = divmod(num_work_items, workers)
-
-    @always_inline
-    async def task(worker: Int) {imm}:
-        var start = worker * chunk_size + min(worker, extra_items)
-        for i in range(chunk_size + Int(worker < extra_items)):
-            func(start + i)
-
-    var tasks = TaskGroup()
-    for worker in range(workers):
-        tasks.create_task(task(worker))
-    tasks.wait()
 
 
 def sign(x: Float64) -> Int:
@@ -97,22 +66,11 @@ def orient_range(p: Ptr, dst: IPtr, start: Int, stop: Int):
 
 @export("msg_orient2d_batch")
 def msg_orient2d_batch(points: Int, n: Int, result: Int) abi("C"):
+    """Screen every 2D triple.  Six float64 arrive and about ten flops run, so
+    this pass is bandwidth bound and stays serial."""
     if n <= 0:
         return
-    var p = Ptr(unsafe_from_address=points)
-    var dst = IPtr(unsafe_from_address=result)
-    if n >= ORIENT_PARALLEL_THRESHOLD:
-        initialize_runtime()
-        var chunks = (n + ORIENT_CHUNK - 1) // ORIENT_CHUNK
-
-        @always_inline
-        def apply_chunk(chunk: Int) {imm p, imm dst, imm n}:
-            var start = chunk * ORIENT_CHUNK
-            orient_range(p, dst, start, min(start + ORIENT_CHUNK, n))
-
-        parallelize(apply_chunk, chunks, ORIENT_WORKERS)
-    else:
-        orient_range(p, dst, 0, n)
+    orient_range(Ptr(unsafe_from_address=points), IPtr(unsafe_from_address=result), 0, n)
 
 
 @export("msg_incircle_batch")
@@ -200,28 +158,46 @@ def classify_polygon_point(q: Ptr, p: Ptr, dst: IPtr, n: Int, i: Int):
         dst.store(i, 1)
 
 
+def classify_polygon_range(q: Ptr, p: Ptr, dst: IPtr, n: Int, start: Int, stop: Int):
+    for i in range(start, stop):
+        classify_polygon_point(q, p, dst, n, i)
+
+
 @export("msg_points_in_polygon")
 def msg_points_in_polygon(points: Int, m: Int, polygon: Int, n: Int, result: Int) abi("C"):
     if m <= 0 or n < 3:
         return
-    var q = Ptr(unsafe_from_address=points)
-    var p = Ptr(unsafe_from_address=polygon)
-    var dst = IPtr(unsafe_from_address=result)
-    if m * n >= POLYGON_PARALLEL_THRESHOLD:
-        initialize_runtime()
-        var chunks = (m + POLYGON_CHUNK - 1) // POLYGON_CHUNK
+    classify_polygon_range(
+        Ptr(unsafe_from_address=points),
+        Ptr(unsafe_from_address=polygon),
+        IPtr(unsafe_from_address=result),
+        n,
+        0,
+        m,
+    )
 
-        @always_inline
-        def apply_chunk(chunk: Int) {imm q, imm p, imm dst, imm m, imm n}:
-            var start = chunk * POLYGON_CHUNK
-            var stop = min(start + POLYGON_CHUNK, m)
-            for i in range(start, stop):
-                classify_polygon_point(q, p, dst, n, i)
 
-        parallelize(apply_chunk, chunks, POLYGON_WORKERS)
-    else:
-        for i in range(m):
-            classify_polygon_point(q, p, dst, n, i)
+@export("msg_points_in_polygon_chunk")
+def msg_points_in_polygon_chunk(
+    points: Int, m: Int, polygon: Int, n: Int, result: Int, start: Int, stop: Int
+) abi("C"):
+    """Classify the query points in ``[start, stop)``.
+
+    Every point re-reads the whole polygon, so once the polygon is cache
+    resident the inner loop is compute bound: roughly fifteen flops per edge
+    against bytes that are already in L1.  The shim splits the query range over
+    a thread pool above the measured crossover.
+    """
+    if stop <= start or m <= 0 or n < 3:
+        return
+    classify_polygon_range(
+        Ptr(unsafe_from_address=points),
+        Ptr(unsafe_from_address=polygon),
+        IPtr(unsafe_from_address=result),
+        n,
+        start,
+        stop,
+    )
 
 
 @export("msg_segment_pairs")

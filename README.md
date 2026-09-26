@@ -69,9 +69,16 @@ The point-in-polygon row has no NumPy baseline because NumPy has no equivalent
 single-call polygon classifier. It remains included as a reproducible throughput
 measurement rather than a fabricated comparison.
 
-No GPU path is provided. These kernels perform well under 2 floating-point
-operations per byte moved, so host/device transfer and launch costs cannot be
-amortized; CPU SIMD and thresholded parallel execution are the appropriate paths.
+No GPU path is provided. The orient2d and incircle passes move far more bytes than
+they do arithmetic, so host/device transfer and launch costs cannot be amortized.
+Point-in-polygon is the exception: each query point re-reads the whole polygon, so
+once the polygon is cache resident the inner loop is compute bound. Its fan-out
+therefore moved to the Python shim, because Mojo 1.2.0 removed
+`std.runtime.asyncrt`. Above four million point-edge pairs the query range is
+split into contiguous blocks and one `msg_points_in_polygon_chunk` call per block
+is issued from a `ThreadPoolExecutor`; ctypes releases the GIL, so the calls run
+in parallel and every classification is bit-identical to the serial kernel.
+Measured on this box the fan-out reaches about 6x at 20M point-edge pairs.
 
 ## How it works
 
@@ -82,5 +89,9 @@ the non-parametric C ABI supported by this Mojo nightly. The kernel makes no
 allocations and writes caller-owned output buffers directly. Scalar Python objects
 are a thin compatibility layer over the same batch functions, with exact dyadic
 fallback only when a floating-point filter is inconclusive.
+
+`msg_orient2d_batch` stays serial: it reads six float64 per triple and runs about
+ten flops, roughly 0.2 flops per byte, so chunking it across cores would only add
+memory traffic.
 
 MIT licensed.
