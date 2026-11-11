@@ -61,7 +61,7 @@ def incircle_filtered(ax: Float64, ay: Float64, bx: Float64, by: Float64, cx: Fl
 def orient_range(p: Ptr, dst: IPtr, start: Int, stop: Int):
     for i in range(start, stop):
         var j = i * 6
-        dst.store(i, orient_filtered(p.load(j), p.load(j + 1), p.load(j + 2), p.load(j + 3), p.load(j + 4), p.load(j + 5)))
+        dst.store(i, orient_filtered(p.unsafe_load(j), p.unsafe_load(j + 1), p.unsafe_load(j + 2), p.unsafe_load(j + 3), p.unsafe_load(j + 4), p.unsafe_load(j + 5)))
 
 
 @export("msg_orient2d_batch")
@@ -81,7 +81,7 @@ def msg_incircle_batch(points: Int, n: Int, result: Int) abi("C"):
     var dst = IPtr(unsafe_from_address=result)
     for i in range(n):
         var j = i * 8
-        dst.store(i, incircle_filtered(p.load(j), p.load(j + 1), p.load(j + 2), p.load(j + 3), p.load(j + 4), p.load(j + 5), p.load(j + 6), p.load(j + 7)))
+        dst.store(i, incircle_filtered(p.unsafe_load(j), p.unsafe_load(j + 1), p.unsafe_load(j + 2), p.unsafe_load(j + 3), p.unsafe_load(j + 4), p.unsafe_load(j + 5), p.unsafe_load(j + 6), p.unsafe_load(j + 7)))
 
 
 @export("msg_polygon_area")
@@ -93,22 +93,22 @@ def msg_polygon_area(vertices: Int, n: Int) abi("C") -> Float64:
     for i in range(n):
         var j = i * 2
         var k = ((i + 1) % n) * 2
-        total += p.load(j) * p.load(k + 1) - p.load(j + 1) * p.load(k)
+        total += p.unsafe_load(j) * p.unsafe_load(k + 1) - p.unsafe_load(j + 1) * p.unsafe_load(k)
     return total * 0.5
 
 
 def classify_polygon_point(q: Ptr, p: Ptr, dst: IPtr, n: Int, i: Int):
-    var x = q.load(i * 2)
-    var y = q.load(i * 2 + 1)
+    var x = q.unsafe_load(i * 2)
+    var y = q.unsafe_load(i * 2 + 1)
     var winding = 0
     comptime W = simdwidthof[DType.float64]()
     var vector_winding = SIMD[DType.int64, W](0)
     var e = 0
     while e + W <= n - 1:
-        var ax = p.load[width=W](e)
-        var ay = p.load[width=W](n + e)
-        var bx = p.load[width=W](e + 1)
-        var by = p.load[width=W](n + e + 1)
+        var ax = p.unsafe_load[width=W](e)
+        var ay = p.unsafe_load[width=W](n + e)
+        var bx = p.unsafe_load[width=W](e + 1)
+        var by = p.unsafe_load[width=W](n + e + 1)
         var left = (ax - x) * (by - y)
         var right = (ay - y) * (bx - x)
         var det = left - right
@@ -125,10 +125,10 @@ def classify_polygon_point(q: Ptr, p: Ptr, dst: IPtr, n: Int, i: Int):
         e += W
     winding = Int(vector_winding.reduce_add())
     while e < n - 1:
-        var ax = p.load(e)
-        var ay = p.load(n + e)
-        var bx = p.load(e + 1)
-        var by = p.load(n + e + 1)
+        var ax = p.unsafe_load(e)
+        var ay = p.unsafe_load(n + e)
+        var bx = p.unsafe_load(e + 1)
+        var by = p.unsafe_load(n + e + 1)
         var side = orient_filtered(ax, ay, bx, by, x, y)
         if side == 0:
             dst.store(i, 2)
@@ -139,10 +139,10 @@ def classify_polygon_point(q: Ptr, p: Ptr, dst: IPtr, n: Int, i: Int):
         elif by <= y and side < 0:
             winding -= 1
         e += 1
-    var ax = p.load(n - 1)
-    var ay = p.load(2 * n - 1)
-    var bx = p.load(0)
-    var by = p.load(n)
+    var ax = p.unsafe_load(n - 1)
+    var ay = p.unsafe_load(2 * n - 1)
+    var bx = p.unsafe_load(0)
+    var by = p.unsafe_load(n)
     var side = orient_filtered(ax, ay, bx, by, x, y)
     if side == 0:
         dst.store(i, 2)
@@ -208,10 +208,10 @@ def msg_segment_pairs(segments: Int, n: Int, result: Int) abi("C"):
     var dst = IPtr(unsafe_from_address=result)
     for i in range(n):
         var j = i * 8
-        var a = orient_filtered(p.load(j), p.load(j + 1), p.load(j + 2), p.load(j + 3), p.load(j + 4), p.load(j + 5))
-        var b = orient_filtered(p.load(j), p.load(j + 1), p.load(j + 2), p.load(j + 3), p.load(j + 6), p.load(j + 7))
-        var c = orient_filtered(p.load(j + 4), p.load(j + 5), p.load(j + 6), p.load(j + 7), p.load(j), p.load(j + 1))
-        var d = orient_filtered(p.load(j + 4), p.load(j + 5), p.load(j + 6), p.load(j + 7), p.load(j + 2), p.load(j + 3))
+        var a = orient_filtered(p.unsafe_load(j), p.unsafe_load(j + 1), p.unsafe_load(j + 2), p.unsafe_load(j + 3), p.unsafe_load(j + 4), p.unsafe_load(j + 5))
+        var b = orient_filtered(p.unsafe_load(j), p.unsafe_load(j + 1), p.unsafe_load(j + 2), p.unsafe_load(j + 3), p.unsafe_load(j + 6), p.unsafe_load(j + 7))
+        var c = orient_filtered(p.unsafe_load(j + 4), p.unsafe_load(j + 5), p.unsafe_load(j + 6), p.unsafe_load(j + 7), p.unsafe_load(j), p.unsafe_load(j + 1))
+        var d = orient_filtered(p.unsafe_load(j + 4), p.unsafe_load(j + 5), p.unsafe_load(j + 6), p.unsafe_load(j + 7), p.unsafe_load(j + 2), p.unsafe_load(j + 3))
         if a * b < 0 and c * d < 0:
             dst.store(i, 1)
         elif a == 0 or b == 0 or c == 0 or d == 0:
